@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/TaikoQuant.Audio.ManagedBass/TaikoQuant.Audio.ManagedBass.csproj" />
+    <Project Path="src/TaikoQuant.Core/TaikoQuant.Core.csproj" />
+    <Project Path="src/TaikoQuant.Game/TaikoQuant.Game.csproj" />
+    <Project Path="src/TaikoQuant.Rendering.Raylib/TaikoQuant.Rendering.Raylib.csproj" />
+  </Folder>
+</Solution>

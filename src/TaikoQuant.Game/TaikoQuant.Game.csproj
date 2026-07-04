@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\TaikoQuant.Core\TaikoQuant.Core.csproj" />
+    <ProjectReference Include="..\TaikoQuant.Rendering.Raylib\TaikoQuant.Rendering.Raylib.csproj" />
+    <ProjectReference Include="..\TaikoQuant.Audio.ManagedBass\TaikoQuant.Audio.ManagedBass.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>
