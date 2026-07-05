@@ -31,6 +31,8 @@ namespace TaikoQuant.Core.Scenes
         private ITexture? _subBackgroundImage;
         private ITexture? _frameImage;
         private ITexture? _courseSymbolImage;
+        private ITexture? _miniTaikoImage;
+        private ITexture? _backgroundRightImage;
 
         private ISound? _sndDong;
         private ISound? _sndKa;
@@ -54,7 +56,11 @@ namespace TaikoQuant.Core.Scenes
         private int _kaCount = 0;
         private int _fukaCount = 0;
 
-        private const int JUDGE_X = 410;
+        // ゲーム解像度: 1280x720
+        // AviUtl(1920x1080)座標 → 1280x720変換係数: *2/3
+        // JUDGE_X, LANE_CY 等はすべて1280x720座標
+
+        private const int JUDGE_X = 411;
         private const float SCROLL_SPEED = 1.0f;
         private const float BASE_SCROLL_PX_PER_MS = 0.435f;
         private const float JUDGE_RYO_MS = 35.0f;
@@ -65,10 +71,11 @@ namespace TaikoQuant.Core.Scenes
         private static readonly int[] NS_SRC_X = { 11, 159, 289, 401, 531, 679, 780, 1051, 1170, 1459 };
         private static readonly int[] NS_SRC_W = { 106, 74, 74, 110, 110, 70, 165, 106, 185, 179 };
         private const int NS_SRC_H = 130;
+        // NS_DST_H: ノーツ描画高さ (1280x720基準)
         private const int NS_DST_H = 128;
-        private const int LANE_CY = 258;
-        private const int LANE_TOP = 183;
-        private const int LANE_BOTTOM = 357;
+        private const int LANE_CY = 258;   // .aup2計算値
+        private const int LANE_TOP = 194;   // 258 - 64
+        private const int LANE_BOTTOM = 322; // 258 + 64
 
         public GamePlayScene(params object[] args)
         {
@@ -81,15 +88,27 @@ namespace TaikoQuant.Core.Scenes
             {
                 try
                 {
-                    var parser = new TjaChartReader();
-                    _songData = parser.GetSongDataFromTja(_song.TjaPath, TjaChartReader.LoadType.Normal);
+                    var tjaParser = new TJAParser();
+					var result = tjaParser.LoadSongData(_song.TjaPath, _diffId);
+					_songData = result.song;
+					_course = result.course;
 
-                    // diffId → SongCourse インデックス
-                    // 0=Easy,1=Normal,2=Hard,3=Oni,4=Edit (GamePlay.cpp に準拠)
+					// Use the pre-filtered hittable notes
+					foreach (var chip in result.hittableNotes)
+					{
+						_notes.Add(new ActiveNote { Chip = chip, Judged = false });
+					}
+					_notes = _notes.OrderBy(n => n.Chip._time).ToList();
+
+					if (_notes.Count > 0)
+						_songEndMs = (float)_notes.Last().Chip._time + 3000f;
+					else
+						_songEndMs = 5000f;
+                    /*
+
                     if (_songData != null && _diffId >= 0 && _diffId < 5)
                         _course = _songData._songCourses[_diffId];
 
-                    // _course が null のとき最初に見つかったコースにフォールバック
                     if (_course == null && _songData != null)
                         _course = _songData._songCourses.FirstOrDefault(c => c != null);
 
@@ -107,6 +126,7 @@ namespace TaikoQuant.Core.Scenes
                         else
                             _songEndMs = 5000f;
                     }
+*/
                 }
                 catch (Exception ex)
                 {
@@ -115,14 +135,6 @@ namespace TaikoQuant.Core.Scenes
             }
 
             _playStartMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        }
-
-        private static bool IsHittable(Chip chip)
-        {
-            return chip._noteType == TaikoNauts.Core.Taiko.Charts.NoteType.Don
-                || chip._noteType == TaikoNauts.Core.Taiko.Charts.NoteType.Ka
-                || chip._noteType == TaikoNauts.Core.Taiko.Charts.NoteType.DON
-                || chip._noteType == TaikoNauts.Core.Taiko.Charts.NoteType.KA;
         }
 
         private float GetChartMs()
@@ -135,7 +147,6 @@ namespace TaikoQuant.Core.Scenes
         private float CalcScrollPxPerMs(Chip chip)
         {
             float bpmRatio = (chip._bpm > 0.0) ? (float)(chip._bpm / 120.0) : 1f;
-            // scroll は Complex 型: Real部がスクロール速度倍率
             float scrollX = (float)chip._scroll.Real;
             return BASE_SCROLL_PX_PER_MS * bpmRatio * scrollX * SCROLL_SPEED;
         }
@@ -222,7 +233,6 @@ namespace TaikoQuant.Core.Scenes
             if (donPressed && _sndDong != null) try { _sndDong.Play(); } catch { }
             if (kaPressed && _sndKa != null) try { _sndKa.Play(); } catch { }
 
-            // 判定: 最も近いノーツを探して判定
             if (donPressed || kaPressed)
             {
                 float minDelta = float.MaxValue;
@@ -241,7 +251,6 @@ namespace TaikoQuant.Core.Scenes
                     JudgeNote(target, donPressed, kaPressed);
             }
 
-            // ミス処理
             foreach (var active in _notes)
             {
                 if (!active.Judged && chartMs - (float)active.Chip._time > JUDGE_KA_MS)
@@ -266,9 +275,9 @@ namespace TaikoQuant.Core.Scenes
             switch (type)
             {
                 case TaikoNauts.Core.Taiko.Charts.NoteType.Don: return 1;  // 小ドン
-                case TaikoNauts.Core.Taiko.Charts.NoteType.Ka:  return 2;  // 小カッ
+                case TaikoNauts.Core.Taiko.Charts.NoteType.Ka: return 2;  // 小カッ
                 case TaikoNauts.Core.Taiko.Charts.NoteType.DON: return 3;  // 大ドン
-                case TaikoNauts.Core.Taiko.Charts.NoteType.KA:  return 4;  // 大カッ
+                case TaikoNauts.Core.Taiko.Charts.NoteType.KA: return 4;  // 大カッ
                 default: return -1;
             }
         }
@@ -279,56 +288,62 @@ namespace TaikoQuant.Core.Scenes
             {
                 try
                 {
-                    _fontUI    = renderer.LoadFont("Theme/default/Fonts/FOT-OedoKtr.otf", 24);
+                    _fontUI = renderer.LoadFont("Theme/default/Fonts/FOT-OedoKtr.otf", 24);
                     _fontScore = renderer.LoadFont("Theme/default/Fonts/FOT-OedoKtr.otf", 36);
                     _fontTitle = renderer.LoadFont("Theme/default/Fonts/FOT-OedoKtr.otf", 36);
 
-                    _backgroundImage   = renderer.LoadTexture("Theme/default/img/05_Game/1P_Background.png");
-                    _baseImage         = renderer.LoadTexture("Theme/default/img/05_Game/Base.png");
-                    _notesImage        = renderer.LoadTexture("Theme/default/img/05_Game/Notes.png");
+                    _backgroundImage = renderer.LoadTexture("Theme/default/img/05_Game/1P_Background.png");
+                    _baseImage = renderer.LoadTexture("Theme/default/img/05_Game/Base.png");
+                    _notesImage = renderer.LoadTexture("Theme/default/img/05_Game/Notes.png");
                     _subBackgroundImage = renderer.LoadTexture("Theme/default/img/05_Game/Background_Sub.png");
-                    _frameImage        = renderer.LoadTexture("Theme/default/img/05_Game/1P_Frame.png");
+                    _frameImage = renderer.LoadTexture("Theme/default/img/05_Game/1P_Frame.png");
                     _courseSymbolImage = renderer.LoadTexture("Theme/default/img/05_Game/coursesymbol_oni.png");
+                    _miniTaikoImage = renderer.LoadTexture("Theme/default/img/05_Game/MiniTaiko.png");
+                    _backgroundRightImage = renderer.LoadTexture("Theme/default/img/05_Game/Background_1P.png");
                 }
                 catch { }
                 _resourcesLoaded = true;
             }
 
-            // --- 背景色 ---
+            // -------------------------------------------------------
+            // 描画順: AviUtlレイヤー順(下→上)に従う
+            // 全座標は1280x720基準
+            // -------------------------------------------------------
+
+            // [layer=1] 背景色 #606060
             renderer.Clear(0x606060FF);
 
-            // --- Background_Main: レーン背景を黒塗りで (329,183)-(1280,357) ---
-            renderer.DrawRectangle(329, 183, 1280 - 329, 357 - 183, 0x000000FF);
+            // [layer=10] Background_1P: 右側背景
+            if (_backgroundRightImage != null)
+                renderer.DrawTexture(_backgroundRightImage, 803, 270, 333, 176);
 
-            // --- 判定枠 (Notes.png col=0): ノーツより後ろに描画 ---
+            // [layer=13] 1P_Background: 左側背景
+            if (_backgroundImage != null)
+                renderer.DrawTexture(_backgroundImage, 167, 270, 333, 176);
+
+            // [layer=14] MiniTaiko: ミニ太鼓
+            if (_miniTaikoImage != null)
+                renderer.DrawTexture(_miniTaikoImage, 267, 538, 200, 200); // サイズは暫定
+
+            // [layer=15] 1P_Base: 太鼓本体
+            if (_baseImage != null)
+                renderer.DrawTexture(_baseImage, 842, 178, 205, 228);
+
+            // [layer=16] 1P_Frame: レーン枠
+            if (_frameImage != null)
+                renderer.DrawTexture(_frameImage, 803, 246, 951, 224);
+
+            // [layer=17] JudgementFrame (Notes.png col=0)
             if (_notesImage != null)
             {
+                int judgeW = (int)(NS_SRC_W[0] * (NS_DST_H / (float)NS_SRC_H));
                 renderer.DrawTextureRec(_notesImage,
-                    JUDGE_X - 128 / 2f, LANE_CY - NS_DST_H / 2f, 128, NS_DST_H,
+                    JUDGE_X - judgeW / 2f, LANE_CY - NS_DST_H / 2f,
+                    judgeW, NS_DST_H,
                     NS_SRC_X[0], 0, NS_SRC_W[0], NS_SRC_H, 0xFFFFFFFF);
             }
 
-            // --- 1P_Background: 左側太鼓エリア (0,182)-(333,358) ---
-            if (_backgroundImage != null)
-                renderer.DrawTexture(_backgroundImage, 0, 182, 333, 358 - 182);
-
-            // --- Background_Sub: レーン下のサブ背景帯 (334,323)-(1280,350) ---
-            if (_subBackgroundImage != null)
-                renderer.DrawTexture(_subBackgroundImage, 334, 323, 1280 - 334, 350 - 323);
-
-            // --- coursesymbol_oni: 難易度シンボル (src crop: 894,115 1280x175) ---
-            if (_courseSymbolImage != null)
-                renderer.DrawTextureRec(_courseSymbolImage, 0, 182, 1280, 175, 894, 115, 1280, 175, 0xFFFFFFFF);
-
-            // --- Base: 太鼓本体 (140,160)-(346,388) ---
-            if (_baseImage != null)
-                renderer.DrawTexture(_baseImage, 140, 160, 346 - 140, 388 - 160);
-
-            // --- 1P_Frame: レーン枠 (328,134)-(1279,358) ---
-            if (_frameImage != null)
-                renderer.DrawTexture(_frameImage, 328, 134, 1280 - 328, 358 - 134);
-
-            // --- ノーツ描画 ---
+            // ノーツ描画 (後→前の順: 右から左)
             for (int i = _notes.Count - 1; i >= 0; i--)
             {
                 var active = _notes[i];
@@ -351,17 +366,17 @@ namespace TaikoQuant.Core.Scenes
                 }
             }
 
-            // --- スコア / コンボ表示 ---
+            // スコア / コンボ表示
             if (_fontScore != null)
             {
                 renderer.DrawText(_fontScore, $"Score: {_score}", 1000, 30, 36, 0, 0xFFFFFFFF);
                 renderer.DrawText(_fontScore, $"Combo: {_combo}", 1000, 70, 36, 0, 0xFFFFFFFF);
             }
 
-            // --- 曲名表示（右上）---
+            // 曲名表示
             if (_fontTitle != null && _songData != null)
             {
-                renderer.DrawText(_fontTitle, _songData._header._title, 900, 150, 32, 0, 0xFFFFFFFF);
+                renderer.DrawText(_fontTitle, _songData._header._title, 900, 140, 32, 0, 0xFFFFFFFF);
             }
         }
 
@@ -383,6 +398,8 @@ namespace TaikoQuant.Core.Scenes
             _subBackgroundImage?.Dispose();
             _frameImage?.Dispose();
             _courseSymbolImage?.Dispose();
+            _miniTaikoImage?.Dispose();
+            _backgroundRightImage?.Dispose();
             _music?.Dispose();
         }
     }

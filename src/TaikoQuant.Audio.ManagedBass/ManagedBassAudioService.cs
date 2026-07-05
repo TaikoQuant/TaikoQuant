@@ -16,14 +16,36 @@ namespace TaikoQuant.Audio.ManagedBass
         private readonly Dictionary<string, ISound> _soundCache = new Dictionary<string, ISound>();
         private readonly Dictionary<string, IMusic> _musicCache = new Dictionary<string, IMusic>();
         private static bool _bassInitialized = false;
+        private static bool _bassAvailable = false;
 
         public ManagedBassAudioService()
         {
             if (!_bassInitialized)
             {
-                // Initialize Bass with default device, 44100 Hz.
-                // Attempt to initialise Bass; if it fails (e.g., native lib missing), we continue in stub mode.
-                try { Bass.Init(-1, 44100, 0, IntPtr.Zero); } catch { /* ignore missing native lib */ }
+                // NOTE: Do not shrink Configuration.DeviceBufferLength / UpdatePeriod too
+                // aggressively here. Very small buffers (previously 20ms/10ms) caused the
+                // audio device to underrun on short one-shot hit sounds, which cut the tail
+                // of the sample off before it finished playing. Keep BASS's own defaults for
+                // buffer/update timing (they are already tuned for low-latency playback) and
+                // only bump the playback buffer slightly to give the mixer more headroom.
+                try
+                {
+                    Bass.Configure(Configuration.PlaybackBufferLength, 300); // ms, headroom against underruns without adding perceptible latency
+                    Bass.Configure(Configuration.UpdateThreads, 2);          // let BASS use more than one update thread
+
+                    // Initialise Bass with the default device, 44100 Hz.
+                    _bassAvailable = Bass.Init(-1, 44100, DeviceInitFlags.Default, IntPtr.Zero);
+                    if (!_bassAvailable)
+                    {
+                        Console.WriteLine($"[Audio] Bass.Init failed: {Bass.LastError}. Falling back to SoundPlayer (expect degraded audio).");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // Native lib missing or otherwise unavailable — continue in stub mode.
+                    _bassAvailable = false;
+                    Console.WriteLine($"[Audio] Bass unavailable, falling back to SoundPlayer: {ex.Message}");
+                }
                 _bassInitialized = true;
             }
         }
@@ -37,15 +59,31 @@ namespace TaikoQuant.Audio.ManagedBass
             if (_soundCache.TryGetValue(fullPath, out var cached))
                 return cached;
 
-            // Load as a Bass sample (fast short sound effect).
             if (!System.IO.File.Exists(fullPath))
                 throw new System.IO.FileNotFoundException("Audio file not found: " + fullPath);
 
-            // Up to 32 simultaneous instances (mirrors TJAPlayer AudioManager).
-            int sample = Bass.SampleLoad(fullPath, 0, 0, 32, BassFlags.Default);
-            if (sample == 0) throw new Exception($"Failed to load sample: {Bass.LastError} (Path: {fullPath})");
+            ISound sound;
+            if (_bassAvailable)
+            {
+                // BASS handles wav/mp3/ogg samples natively and mixes them on one audio
+                // thread, which is far cheaper than one SoundPlayer/winmm handle per hit.
+                // Up to 32 simultaneous instances (mirrors TJAPlayer AudioManager).
+                int sample = Bass.SampleLoad(fullPath, 0, 0, 32, BassFlags.Default);
+                if (sample == 0)
+                {
+                    Console.WriteLine($"[Audio] Bass failed to load sample ({Bass.LastError}), falling back to SoundPlayer: {fullPath}");
+                    sound = new SimpleSound(fullPath);
+                }
+                else
+                {
+                    sound = new BassSound(sample);
+                }
+            }
+            else
+            {
+                sound = new SimpleSound(fullPath);
+            }
 
-            var sound = new BassSound(sample);
             _soundCache[fullPath] = sound;
             return sound;
         }
@@ -59,12 +97,12 @@ namespace TaikoQuant.Audio.ManagedBass
             if (_musicCache.TryGetValue(fullPath, out var cached))
                 return cached;
 
-            // Choose implementation based on file extension.
-            var ext = System.IO.Path.GetExtension(fullPath).ToLowerInvariant();
+            // Always prefer BASS (wav/mp3/ogg all supported) — SoundPlayer is a synchronous,
+            // WAV-only WinMM wrapper that was previously used for every non-OGG file and is
+            // the main source of the stuttering/heavy playback in-game.
             IMusic music;
-            if (ext == ".ogg")
+            if (_bassAvailable)
             {
-                // Try ManagedBass first.
                 var bassMusic = new BassMusic(fullPath);
                 if (bassMusic.IsValid)
                 {
@@ -72,16 +110,15 @@ namespace TaikoQuant.Audio.ManagedBass
                 }
                 else
                 {
-                    // Fallback to simple WAV player (will likely fail for OGG, but prevents crash).
-                    Console.WriteLine($"[Audio] Bass failed to load OGG, falling back to SimpleMusic: {fullPath}");
+                    Console.WriteLine($"[Audio] Bass failed to load music ({Bass.LastError}), falling back to SimpleMusic: {fullPath}");
                     music = new SimpleMusic(fullPath);
                 }
             }
             else
             {
-                // Fallback to simple WAV player.
                 music = new SimpleMusic(fullPath);
             }
+
             _musicCache[fullPath] = music;
             return music;
         }
@@ -89,7 +126,11 @@ namespace TaikoQuant.Audio.ManagedBass
         public void SetMasterVolume(float volume)
         {
             volume = Math.Clamp(volume, 0f, 1f);
-            // Bass.Volume set ignored in stub
+            if (_bassAvailable)
+            {
+                Bass.GlobalStreamVolume = (int)(volume * 10000);
+                Bass.GlobalSampleVolume = (int)(volume * 10000);
+            }
         }
 
         public void Update()
@@ -105,7 +146,12 @@ namespace TaikoQuant.Audio.ManagedBass
             foreach (var m in _musicCache.Values) m.Dispose();
             _soundCache.Clear();
             _musicCache.Clear();
-            // Bass.Free() omitted; could be called when app exits.
+            if (_bassAvailable)
+            {
+                Bass.Free();
+                _bassInitialized = false;
+                _bassAvailable = false;
+            }
         }
 
         private class SimpleSound : ISound
@@ -227,7 +273,7 @@ namespace TaikoQuant.Audio.ManagedBass
         }
 
         // -----------------------------------------------------------------
-        // BassMusic – uses ManagedBass for OGG (or other formats) playback.
+        // BassMusic – uses ManagedBass for OGG/MP3/WAV playback.
         // -----------------------------------------------------------------
         private class BassMusic : IMusic
         {
@@ -237,17 +283,24 @@ namespace TaikoQuant.Audio.ManagedBass
 
             public BassMusic(string filePath)
             {
-                // Create a stream; if Bass fails it returns 0 which we safely handle.
-                _handle = Bass.CreateStream(filePath, 0, 0, BassFlags.Default);
+                // BassFlags.AsyncFile lets BASS read the file on its own background thread
+                // instead of blocking the caller/game thread on disk I/O — this was the main
+                // cause of stutter when streaming music during gameplay.
+                _handle = Bass.CreateStream(filePath, 0, 0, BassFlags.Default | BassFlags.AsyncFile);
             }
 
             // Expose validity for fallback logic.
             public bool IsValid => _handle != 0;
+
             public void Play(bool loop = true)
             {
                 if (_disposed) throw new ObjectDisposedException(nameof(BassMusic));
                 _loop = loop;
-                if (_handle != 0) Bass.ChannelPlay(_handle, false);
+                if (_handle != 0)
+                {
+                    Bass.ChannelFlags(_handle, loop ? BassFlags.Loop : BassFlags.Default, BassFlags.Loop);
+                    Bass.ChannelPlay(_handle, false);
+                }
             }
 
             public void Stop()

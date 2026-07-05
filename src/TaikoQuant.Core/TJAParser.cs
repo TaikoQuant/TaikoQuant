@@ -12,8 +12,61 @@ namespace TaikoQuant.Core
     /// This is a simplified but functional port of the original C++ TJAParser.
     /// </summary>
     #pragma warning disable CS0414
+using System.Linq;
+using TaikoNauts.Core.Taiko.Charts;
+
 public class TJAParser
     {
+        // Existing fields and methods...
+
+        /// <summary>
+        /// Loads a TJA file using the original TaikoNauts parser and extracts hittable notes.
+        /// Returns the raw Song object, the appropriate SongCourse, and a list of hittable Chip notes.
+        /// </summary>
+        public (Song? song, SongCourse? course, List<Chip> hittableNotes) LoadSongData(string tjaPath, int diffId)
+        {
+            try
+            {
+                var parser = new TjaChartReader();
+                var song = parser.GetSongDataFromTja(tjaPath, TjaChartReader.LoadType.Normal);
+                SongCourse? course = null;
+                if (song != null && diffId >= 0 && diffId < 5)
+                {
+                    course = song._songCourses[diffId];
+                }
+                if (course == null && song != null)
+                {
+                    course = song._songCourses.FirstOrDefault(c => c != null);
+                }
+                var hittable = new List<Chip>();
+                if (course != null)
+                {
+                    foreach (var chip in course._chips)
+                    {
+                        if (IsHittable(chip))
+                        {
+                            hittable.Add(chip);
+                        }
+                    }
+                    hittable = hittable.OrderBy(c => c._time).ToList();
+                }
+                return (song, course, hittable);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[TJAParser] TJA parse error: {ex}");
+                return (null, null, new List<Chip>());
+            }
+        }
+
+        private static bool IsHittable(Chip chip)
+        {
+            return chip._noteType == NoteType.Don
+                || chip._noteType == NoteType.Ka
+                || chip._noteType == NoteType.DON
+                || chip._noteType == NoteType.KA;
+        }
+
         private readonly string _filePath;
         private readonly int _startDelayMs;
         private string _directory;
