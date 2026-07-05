@@ -21,6 +21,8 @@ namespace TaikoQuant.Core.Scenes
         private string _currentDir;
 
         private readonly List<SelectItem> _items = new List<SelectItem>();
+        // Cached measured text widths for each item (updated after fonts are loaded).
+        private readonly List<float> _itemWidths = new List<float>();
         private int _selectedIndex = 0;
         private float _scrollY = 0f;
         private float _targetScrollY = 0f;
@@ -53,7 +55,7 @@ namespace TaikoQuant.Core.Scenes
             return list.ToArray();
         }
 
-        private readonly Dictionary<string, string> _titleCache = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        private static readonly Dictionary<string, string> _titleCache = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         private SceneType? _nextScene;
 
@@ -74,6 +76,7 @@ namespace TaikoQuant.Core.Scenes
         private void RefreshItemList()
         {
             _items.Clear();
+            _itemWidths.Clear();
             
             if (!string.Equals(Path.GetFullPath(_currentDir), Path.GetFullPath(_songsRoot), StringComparison.OrdinalIgnoreCase))
             {
@@ -207,7 +210,6 @@ namespace TaikoQuant.Core.Scenes
             for (int i = 0; i < _items.Count; i++)
             {
                 float y = startY + (i * ITEM_HEIGHT) - (ITEM_HEIGHT / 2f);
-                
                 if (y < -ITEM_HEIGHT * 2 || y > renderer.Height + ITEM_HEIGHT * 2)
                     continue;
 
@@ -215,13 +217,18 @@ namespace TaikoQuant.Core.Scenes
                 uint textColor = isSelected ? 0xFFFFFFFF : 0xAAAAAAFF;
                 IFont? fontToUse = isSelected ? _fontLarge : _fontNormal;
                 float fontSize = isSelected ? 32f : 24f;
-                
-                if (fontToUse != null) 
+
+                if (fontToUse != null)
                 {
                     string text = _items[i].Title;
-                    float textWidth = renderer.MeasureText(text, fontToUse, fontSize, 0);
+                    // Ensure cache list has entry for this index.
+                    if (_itemWidths.Count <= i)
+                        _itemWidths.Add(0f);
+                    // Compute once per font load; 0 means not measured yet.
+                    if (_itemWidths[i] == 0f)
+                        _itemWidths[i] = renderer.MeasureText(text, fontToUse, fontSize, 0);
+                    float textWidth = _itemWidths[i];
                     float x = (renderer.Width - textWidth) / 2f;
-                    
                     renderer.DrawText(fontToUse, text, x, y + (ITEM_HEIGHT - fontSize) / 2f, fontSize, 0, textColor);
                 }
             }

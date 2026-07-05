@@ -14,6 +14,10 @@ namespace TaikoQuant.Core.Scenes
         private IFont _titleFont = null!;
         private IFont _subFont = null!;
         private bool _fontsLoaded = false;
+        // Preload the song‑select scene in the background to hide the directory scan and font load.
+        private TaikoQuant.Core.Scenes.SongSelectScene? _preloadedSongSelect;
+        private bool _preloadStarted = false;
+        private bool _preloadCompleted = false;
 
         // We need to know the path to the font file. We'll make it configurable or relative.
         private const string FontPath = "Theme/default/Fonts/FOT-OedoKtr.otf";
@@ -39,7 +43,13 @@ namespace TaikoQuant.Core.Scenes
             // Check for Enter key to start the game.
             if (input.IsKeyPressed(GameKey.Enter))
             {
-                // Request a scene change to SongSelect.
+                // If the background preload of SongSelectScene hasn't finished yet, stay on the title screen.
+                if (!_preloadCompleted)
+                {
+                    // Optionally we could display a "Loading..." message in Draw.
+                    return false;
+                }
+                // Preload finished – transition immediately.
                 _nextScene = SceneType.SongSelect;
                 return true;
             }
@@ -55,11 +65,38 @@ namespace TaikoQuant.Core.Scenes
                 _titleFont = renderer.LoadFont(FontPath, 48);
                 _subFont = renderer.LoadFont(FontPath, 24);
                 _fontsLoaded = true;
+
+                // Start background preload of SongSelectScene after fonts are ready.
+                if (!_preloadStarted)
+                {
+                    _preloadStarted = true;
+                    System.Threading.Tasks.Task.Run(() =>
+                    {
+                        var tempScene = new TaikoQuant.Core.Scenes.SongSelectScene();
+                        try
+                        {
+                            tempScene.Draw(renderer);
+                        }
+                        catch { /* ignore any errors during preload */ }
+                        // Keep reference to avoid GC until actually needed.
+                        _preloadedSongSelect = tempScene;
+                        // Mark preload as completed so the title screen can transition instantly.
+                        _preloadCompleted = true;
+                    });
+                }
             }
 
             // Clear the screen first (background black).
             renderer.Clear(0x000000FF);
-
+            if (!_preloadCompleted && _subFont != null)
+            {
+                // Show a subtle loading indicator while the song‑select scene warms up.
+                string loading = "Loading...";
+                float loadWidth = renderer.MeasureText(loading, _subFont, 24, 0);
+                float loadX = (renderer.Width - loadWidth) / 2f;
+                float loadY = (renderer.Height / 2f) + 60; // below the instruction
+                renderer.DrawText(_subFont, loading, loadX, loadY, 24, 0, 0xAAAAAAFF);
+            }
             int screenWidth = renderer.Width;
             int screenHeight = renderer.Height;
 

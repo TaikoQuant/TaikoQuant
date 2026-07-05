@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using Raylib_cs;
 using static Raylib_cs.Raylib;
 using TaikoQuant.Core;
@@ -44,6 +45,8 @@ namespace TaikoQuant.Game
 
             // Create the scene manager.
             var sceneManager = new SceneManager(inputService, audioService, renderer);
+            // Timer to measure per‑frame duration for title display.
+            var frameTimer = Stopwatch.StartNew();
 
             // Main game loop.
             while (!WindowShouldClose())
@@ -56,6 +59,11 @@ namespace TaikoQuant.Game
 
                 // Draw.
                 sceneManager.Draw();
+
+                // Update window title with WASAPI mode and frame time.
+                var frameMs = (int)frameTimer.ElapsedMilliseconds;
+                frameTimer.Restart();
+                SetWindowTitle($"TaikoQuant (WASAPIShared, {frameMs}ms)");
             }
 
             // Clean up.

@@ -26,6 +26,7 @@ namespace TaikoQuant.Core.Scenes
         private IFont? _fontTitle;
 
         private ITexture? _backgroundImage;
+        private ITexture? _background1PImage;
         private ITexture? _baseImage;
         private ITexture? _notesImage;
         private ITexture? _subBackgroundImage;
@@ -139,9 +140,9 @@ namespace TaikoQuant.Core.Scenes
         private void JudgeNote(ActiveNote active, bool isDon, bool isKa)
         {
             float chartMs = GetChartMs();
-            float diff = Math.Abs((float)active.Chip._time - chartMs);
+            float delta = Math.Abs((float)active.Chip._time - chartMs);
 
-            if (diff > JUDGE_KA_MS) return;
+            if (delta > JUDGE_KA_MS) return;
 
             bool isNoteDon = active.Chip._noteType == TaikoNauts.Core.Taiko.Charts.NoteType.Don
                           || active.Chip._noteType == TaikoNauts.Core.Taiko.Charts.NoteType.DON;
@@ -154,7 +155,7 @@ namespace TaikoQuant.Core.Scenes
                 bool isBig = active.Chip._noteType == TaikoNauts.Core.Taiko.Charts.NoteType.DON
                           || active.Chip._noteType == TaikoNauts.Core.Taiko.Charts.NoteType.KA;
 
-                if (delay <= JUDGE_RYO_MS)
+                if (delta <= JUDGE_RYO_MS)
                 {
                     _ryoCount++;
                     _combo++;
@@ -258,6 +259,47 @@ namespace TaikoQuant.Core.Scenes
             }
         }
 
+        private void JudgeNode(ActiveNote note, bool donPressed, bool kaPressed)
+        {
+            // Calculate timing delta for this note
+            float chartMs = GetChartMs();
+            float delta = Math.Abs((float)note.Chip._time - chartMs);
+
+            // Determine note type flags
+            bool isDonNote = note.Chip._noteType == TaikoNauts.Core.Taiko.Charts.NoteType.Don ||
+                             note.Chip._noteType == TaikoNauts.Core.Taiko.Charts.NoteType.DON;
+            bool isKaNote = note.Chip._noteType == TaikoNauts.Core.Taiko.Charts.NoteType.Ka ||
+                             note.Chip._noteType == TaikoNauts.Core.Taiko.Charts.NoteType.KA;
+            // Hit condition
+            if ((donPressed && isDonNote) || (kaPressed && isKaNote))
+            {
+                note.Judged = true;
+                bool isBig = note.Chip._noteType == TaikoNauts.Core.Taiko.Charts.NoteType.DON ||
+                             note.Chip._noteType == TaikoNauts.Core.Taiko.Charts.NoteType.KA;
+                // Play sound effect corresponding to the note type
+                try
+                {
+                    if (isDonNote && _sndDong != null) _sndDong.Play();
+                    else if (isKaNote && _sndKa != null) _sndKa.Play();
+                }
+                catch { /* ignore sound errors */ }
+
+                if (delta <= JUDGE_RYO_MS)
+                {
+                    _ryoCount++;
+                    _combo++;
+                    _maxCombo = Math.Max(_maxCombo, _combo);
+                    _score += isBig ? 660 : 330;
+                }
+                else
+                {
+                    _kaCount++;
+                    _combo = 0;
+                    _score += isBig ? 320 : 160;
+                }
+            }
+        }
+
         public void Draw(IRenderer renderer)
         {
             if (!_resourcesLoaded)
@@ -275,7 +317,8 @@ namespace TaikoQuant.Core.Scenes
                     _frameImage = renderer.LoadTexture("Theme/default/img/05_Game/1P_Frame.png");
                     _courseSymbolImage = renderer.LoadTexture("Theme/default/img/05_Game/coursesymbol_oni.png");
                     _miniTaikoImage = renderer.LoadTexture("Theme/default/img/05_Game/MiniTaiko.png");
-                    _backgroundRightImage = renderer.LoadTexture("Theme/default/img/05_Game/Background_1P.png");
+                    _backgroundRightImage = renderer.LoadTexture("Theme/default/img/05_Game/1P_Background.png");
+                    _background1PImage = renderer.LoadTexture("Theme/default/img/05_Game/Background_1P.png");
                 }
                 catch { }
                 _resourcesLoaded = true;
@@ -289,13 +332,14 @@ namespace TaikoQuant.Core.Scenes
             // [layer=1] 背景色 #606060
             renderer.Clear(0x606060FF);
 
-            // [layer=10] Background_1P: 右側背景
-            if (_backgroundRightImage != null)
-                renderer.DrawTexture(_backgroundRightImage, Layout.BackgroundX + Layout.BackgroundRightOffsetX, Layout.BackgroundY, 333, 176);
-
-            // [layer=13] 1P_Background: 左側背景
+            // [layer=2] 1P_Background (full background)
             if (_backgroundImage != null)
-                renderer.DrawTexture(_backgroundImage, Layout.BackgroundX, Layout.BackgroundY, 333, 176);
+                renderer.DrawTexture(_backgroundImage, Layout.BackgroundX, Layout.BackgroundY);
+
+            // [layer=13] Background_1P: AviUtl(1920x1080) x=250, y=-135, 拡大率100
+            // 実サイズ 1426x264 → 1280x720換算: x=331, y=182, w=951, h=176
+            if (_background1PImage != null)
+                renderer.DrawTexture(_background1PImage, 331, 182, 951, 176);
 
             // [layer=14] MiniTaiko: ミニ太鼓
             if (_miniTaikoImage != null)
@@ -305,7 +349,7 @@ namespace TaikoQuant.Core.Scenes
             if (_baseImage != null)
                 renderer.DrawTexture(_baseImage, Layout.BaseX, Layout.BaseY, 205, 228);
 
-            // [layer=16] 1P_Frame: レーン枠
+            // [layer=16] 1P_Frame: フレーム
             if (_frameImage != null)
                 renderer.DrawTexture(_frameImage, Layout.FrameX, Layout.FrameY, 951, 224);
 
@@ -341,7 +385,7 @@ namespace TaikoQuant.Core.Scenes
                         srcX, 0, srcW, NS_SRC_H, 0xFFFFFFFF);
                 }
             }
-                _gauge.Draw(renderer);
+            _gauge.Draw(renderer);
 
             // スコア / コンボ表示
             if (_fontScore != null)

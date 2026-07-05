@@ -35,7 +35,7 @@ namespace TaikoQuant.Audio.ManagedBass
                     Bass.Configure(Configuration.UpdateThreads, 2);          // let BASS use more than one update thread
 
                     // Initialise Bass with the default device, 44100 Hz.
-                    _bassAvailable = BassWasapi.Init(-1, 44100, WasapiInitFlags.Shared, IntPtr.Zero);
+                    _bassAvailable = BassWasapi.Init(-1, 44100, (int)WasapiInitFlags.Shared);
                     if (!_bassAvailable)
                     {
                         Console.WriteLine($"[Audio] Bass.Init failed: {Bass.LastError}. Falling back to SoundPlayer (expect degraded audio).");

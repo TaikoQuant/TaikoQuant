@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <PackageReference Include="ManagedBass" Version="4.0.2" />
+    <PackageReference Include="ManagedBass.Wasapi" Version="1.0.0" />
   </ItemGroup>
 
   <PropertyGroup>
