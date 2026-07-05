@@ -45,6 +45,8 @@ namespace TaikoQuant.Core.Scenes
         private SceneType? _nextScene;
 
         private List<ActiveNote> _notes = new List<ActiveNote>();
+        // Simple gauge (1 player) – position approximates OpenTaiko's default gauge location
+        private Gauge _gauge = new Gauge(Layout.GaugeX, Layout.GaugeY, Layout.GaugeWidth, Layout.GaugeHeight);
 
         private long _playStartMs = 0;
         private float _songEndMs = 0f;
@@ -60,12 +62,12 @@ namespace TaikoQuant.Core.Scenes
         // AviUtl(1920x1080)座標 → 1280x720変換係数: *2/3
         // JUDGE_X, LANE_CY 等はすべて1280x720座標
 
-        private const int JUDGE_X = 411;
+        private static readonly int JUDGE_X = Layout.JudgeX;
         private const float SCROLL_SPEED = 1.0f;
         private const float BASE_SCROLL_PX_PER_MS = 0.435f;
         private const float JUDGE_RYO_MS = 35.0f;
         private const float JUDGE_KA_MS = 80.0f;
-        private const float PREROLL_MS = (1280f - JUDGE_X) / (BASE_SCROLL_PX_PER_MS * SCROLL_SPEED);
+        private static readonly float PREROLL_MS = (1280f - JUDGE_X) / (BASE_SCROLL_PX_PER_MS * SCROLL_SPEED);
 
         // Notes.png スプライト定数 (GamePlay.cpp 準拠)
         private static readonly int[] NS_SRC_X = { 11, 159, 289, 401, 531, 679, 780, 1051, 1170, 1459 };
@@ -73,9 +75,9 @@ namespace TaikoQuant.Core.Scenes
         private const int NS_SRC_H = 130;
         // NS_DST_H: ノーツ描画高さ (1280x720基準)
         private const int NS_DST_H = 128;
-        private const int LANE_CY = 258;   // .aup2計算値
-        private const int LANE_TOP = 194;   // 258 - 64
-        private const int LANE_BOTTOM = 322; // 258 + 64
+        private static readonly int LANE_CY = Layout.LaneCY;   // .aup2計算値
+        private static readonly int LANE_TOP = LANE_CY - 64;   // LANE_CY - 64
+        private static readonly int LANE_BOTTOM = LANE_CY + 64; // LANE_CY + 64
 
         public GamePlayScene(params object[] args)
         {
@@ -88,45 +90,22 @@ namespace TaikoQuant.Core.Scenes
             {
                 try
                 {
-                    var tjaParser = new TJAParser();
-					var result = tjaParser.LoadSongData(_song.TjaPath, _diffId);
-					_songData = result.song;
-					_course = result.course;
+                    var tjaParser = new TJAParser(_song.TjaPath);
+                    var result = tjaParser.LoadSongData(_song.TjaPath, _diffId);
+                    _songData = result.song;
+                    _course = result.course;
 
-					// Use the pre-filtered hittable notes
-					foreach (var chip in result.hittableNotes)
-					{
-						_notes.Add(new ActiveNote { Chip = chip, Judged = false });
-					}
-					_notes = _notes.OrderBy(n => n.Chip._time).ToList();
-
-					if (_notes.Count > 0)
-						_songEndMs = (float)_notes.Last().Chip._time + 3000f;
-					else
-						_songEndMs = 5000f;
-                    /*
-
-                    if (_songData != null && _diffId >= 0 && _diffId < 5)
-                        _course = _songData._songCourses[_diffId];
-
-                    if (_course == null && _songData != null)
-                        _course = _songData._songCourses.FirstOrDefault(c => c != null);
-
-                    if (_course != null)
+                    // Use the pre-filtered hittable notes
+                    foreach (var chip in result.hittableNotes)
                     {
-                        foreach (var chip in _course._chips)
-                        {
-                            if (IsHittable(chip))
-                                _notes.Add(new ActiveNote { Chip = chip, Judged = false });
-                        }
-                        _notes = _notes.OrderBy(n => n.Chip._time).ToList();
-
-                        if (_notes.Count > 0)
-                            _songEndMs = (float)_notes.Last().Chip._time + 3000f;
-                        else
-                            _songEndMs = 5000f;
+                        _notes.Add(new ActiveNote { Chip = chip, Judged = false });
                     }
-*/
+                    _notes = _notes.OrderBy(n => n.Chip._time).ToList();
+
+                    if (_notes.Count > 0)
+                        _songEndMs = (float)_notes.Last().Chip._time + 3000f;
+                    else
+                        _songEndMs = 5000f;
                 }
                 catch (Exception ex)
                 {
@@ -175,7 +154,7 @@ namespace TaikoQuant.Core.Scenes
                 bool isBig = active.Chip._noteType == TaikoNauts.Core.Taiko.Charts.NoteType.DON
                           || active.Chip._noteType == TaikoNauts.Core.Taiko.Charts.NoteType.KA;
 
-                if (diff <= JUDGE_RYO_MS)
+                if (delay <= JUDGE_RYO_MS)
                 {
                     _ryoCount++;
                     _combo++;
@@ -230,9 +209,6 @@ namespace TaikoQuant.Core.Scenes
             bool donPressed = input.IsKeyPressed(GameKey.DonLeft) || input.IsKeyPressed(GameKey.DonRight);
             bool kaPressed = input.IsKeyPressed(GameKey.KaLeft) || input.IsKeyPressed(GameKey.KaRight);
 
-            if (donPressed && _sndDong != null) try { _sndDong.Play(); } catch { }
-            if (kaPressed && _sndKa != null) try { _sndKa.Play(); } catch { }
-
             if (donPressed || kaPressed)
             {
                 float minDelta = float.MaxValue;
@@ -248,7 +224,7 @@ namespace TaikoQuant.Core.Scenes
                     }
                 }
                 if (target != null)
-                    JudgeNote(target, donPressed, kaPressed);
+                    JudgeNode(target, donPressed, kaPressed);
             }
 
             foreach (var active in _notes)
@@ -315,11 +291,11 @@ namespace TaikoQuant.Core.Scenes
 
             // [layer=10] Background_1P: 右側背景
             if (_backgroundRightImage != null)
-                renderer.DrawTexture(_backgroundRightImage, 803, 270, 333, 176);
+                renderer.DrawTexture(_backgroundRightImage, Layout.BackgroundX + Layout.BackgroundRightOffsetX, Layout.BackgroundY, 333, 176);
 
             // [layer=13] 1P_Background: 左側背景
             if (_backgroundImage != null)
-                renderer.DrawTexture(_backgroundImage, 167, 270, 333, 176);
+                renderer.DrawTexture(_backgroundImage, Layout.BackgroundX, Layout.BackgroundY, 333, 176);
 
             // [layer=14] MiniTaiko: ミニ太鼓
             if (_miniTaikoImage != null)
@@ -327,18 +303,18 @@ namespace TaikoQuant.Core.Scenes
 
             // [layer=15] 1P_Base: 太鼓本体
             if (_baseImage != null)
-                renderer.DrawTexture(_baseImage, 842, 178, 205, 228);
+                renderer.DrawTexture(_baseImage, Layout.BaseX, Layout.BaseY, 205, 228);
 
             // [layer=16] 1P_Frame: レーン枠
             if (_frameImage != null)
-                renderer.DrawTexture(_frameImage, 803, 246, 951, 224);
+                renderer.DrawTexture(_frameImage, Layout.FrameX, Layout.FrameY, 951, 224);
 
             // [layer=17] JudgementFrame (Notes.png col=0)
             if (_notesImage != null)
             {
                 int judgeW = (int)(NS_SRC_W[0] * (NS_DST_H / (float)NS_SRC_H));
                 renderer.DrawTextureRec(_notesImage,
-                    JUDGE_X - judgeW / 2f, LANE_CY - NS_DST_H / 2f,
+                    Layout.JudgeX - judgeW / 2f, Layout.LaneCY - NS_DST_H / 2f,
                     judgeW, NS_DST_H,
                     NS_SRC_X[0], 0, NS_SRC_W[0], NS_SRC_H, 0xFFFFFFFF);
             }
@@ -360,11 +336,12 @@ namespace TaikoQuant.Core.Scenes
                     int dstW = (int)(srcW * (NS_DST_H / (float)NS_SRC_H));
 
                     renderer.DrawTextureRec(_notesImage,
-                        x - dstW / 2f, LANE_CY - NS_DST_H / 2f,
+                        x - dstW / 2f, Layout.LaneCY - NS_DST_H / 2f,
                         dstW, NS_DST_H,
                         srcX, 0, srcW, NS_SRC_H, 0xFFFFFFFF);
                 }
             }
+                _gauge.Draw(renderer);
 
             // スコア / コンボ表示
             if (_fontScore != null)

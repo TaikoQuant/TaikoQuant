@@ -59,13 +59,7 @@ public class TJAParser
             }
         }
 
-        private static bool IsHittable(Chip chip)
-        {
-            return chip._noteType == NoteType.Don
-                || chip._noteType == NoteType.Ka
-                || chip._noteType == NoteType.DON
-                || chip._noteType == NoteType.KA;
-        }
+        private static bool IsHittable(Chip chip) => true;
 
         private readonly string _filePath;
         private readonly int _startDelayMs;
