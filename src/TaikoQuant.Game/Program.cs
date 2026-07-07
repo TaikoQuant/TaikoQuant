@@ -19,20 +19,22 @@ namespace TaikoQuant.Game
             // Initialize Raylib window.
             const int width = 1280;
             const int height = 720;
-            InitWindow(width, height, "TaikoQuant");
-            SetTargetFPS(60); // We'll adjust based on VSync later.
+
             if (settings.VSync)
             {
-                SetTargetFPS(0); // Let vsync control the frame rate.
-                // Note: Raylib's SetTargetFPS(0) means no limit, but we rely on vsync.
-                // We'll also set the vsync flag via SetConfigFlags? Actually, we can use SetConfigFlags(FLAG_VSYNC_HINT);
-                // But we'll just set the target to 0 and rely on the driver.
-                // We'll also enable vsync via SetConfigFlags if needed.
-                // For simplicity, we'll leave it as is and assume the user's vsync setting is honored by setting target to 0.
+                SetConfigFlags(ConfigFlags.VSyncHint);
+            }
+
+            InitWindow(width, height, "TaikoQuant");
+
+            if (!settings.VSync)
+            {
+                SetTargetFPS(120); // High FPS when vsync is off.
             }
             else
             {
-                SetTargetFPS(120); // High FPS when vsync is off.
+                int refreshRate = GetMonitorRefreshRate(GetCurrentMonitor());
+                SetTargetFPS(refreshRate > 0 ? refreshRate : 60); // Safety cap to prevent 100% CPU lock if VSync fails
             }
 
             // Initialize audio service.
@@ -54,16 +56,17 @@ namespace TaikoQuant.Game
                 // Update input state.
                 inputService.Update();
 
+                // Update audio buffers every frame (important for BASS stability).
+                audioService.Update();
+
                 // Update the scene manager.
                 sceneManager.Update();
 
                 // Draw.
                 sceneManager.Draw();
 
-                // Update window title with WASAPI mode and frame time.
-                var frameMs = (int)frameTimer.ElapsedMilliseconds;
-                frameTimer.Restart();
-                SetWindowTitle($"TaikoQuant (WASAPIShared, {frameMs}ms)");
+                // Update window title with actual FPS instead of misleading frame time as audio latency.
+                SetWindowTitle($"TaikoQuant | FPS: {GetFPS()}");
             }
 
             // Clean up.

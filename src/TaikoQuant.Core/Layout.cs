@@ -10,7 +10,7 @@ namespace TaikoQuant.Core
     {
         // Background positions (left & right background share Y)
         public static readonly int BackgroundX = 0;   // left background X
-        public static readonly int BackgroundY = 184;   // Y for both backgrounds
+        public static readonly int BackgroundY = 182;   // Y for both backgrounds
         public static readonly int BackgroundRightOffsetX = 947; // right background = left + offset
 
         // Base (drum body) position
@@ -28,7 +28,7 @@ namespace TaikoQuant.Core
         public static readonly int GaugeHeight = 44; // corresponds to height used in constructor
 
         // Judgment line (where notes hit)
-        public const int JudgeX = 364; // OpenTaiko's default X
-        public const int LaneCY = 152; // Y coordinate of the lane centre
+        public const int JudgeX = 411; // AviUtl X -342.75 -> (960 - 342.75) * 2/3 = 411.5 -> 411
+        public const int LaneCY = 258; // Y coordinate of the lane centre (AviUtl 540 - 152.27 = 387.73 -> * 2/3 = 258)
     }
 }

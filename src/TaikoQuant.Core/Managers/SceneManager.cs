@@ -46,6 +46,7 @@ namespace TaikoQuant.Core.Managers
             if (_sceneFactories.TryGetValue(sceneType, out var factory))
             {
                 _currentScene = factory(args);
+                _currentScene.Init(_renderer, _audio);
             }
             else
             {

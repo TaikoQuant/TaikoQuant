@@ -1,24 +1,23 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
-    <Reference Include="System.Windows.Extensions" />
-  </ItemGroup>
-
-  <ItemGroup>
     <ProjectReference Include="..\TaikoQuant.Core\TaikoQuant.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="ManagedBass" Version="4.0.2" />
-    <PackageReference Include="ManagedBass.Wasapi" Version="1.0.0" />
+    <PackageReference Include="ManagedBass.Fx" Version="4.0.2" />
+    <PackageReference Include="ManagedBass.Wasapi" Version="3.1.1" />
+    <PackageReference Include="ManagedBass.Asio" Version="3.1.1" />
+    <PackageReference Include="ManagedBass.Mix" Version="4.0.2" />
   </ItemGroup>
 
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <UseWPF>true</UseWPF>
+    <!-- Force 64‑bit build for native BASS libraries -->
+    <Prefer32Bit>false</Prefer32Bit>
+	<RuntimeIdentifier>win-x64</RuntimeIdentifier>
   </PropertyGroup>
-
-  <ItemGroup>
-    <PackageReference Include="System.Windows.Extensions" Version="7.0.0" />
-  </ItemGroup>
 </Project>

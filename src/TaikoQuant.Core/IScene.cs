@@ -9,6 +9,13 @@ namespace TaikoQuant.Core
     public interface IScene : IDisposable
     {
         /// <summary>
+        /// Initialize the scene and load resources.
+        /// </summary>
+        /// <param name="renderer">Renderer to load textures/fonts with.</param>
+        /// <param name="audio">Audio service to load sounds with.</param>
+        void Init(IRenderer renderer, IAudioService audio);
+
+        /// <summary>
         /// Update the scene logic.
         /// </summary>
         /// <param name="input">Input service for reading player input.</param>

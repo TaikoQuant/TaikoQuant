@@ -47,6 +47,13 @@ namespace TaikoQuant.Core
         /// Stops the sound if it is playing.
         /// </summary>
         void Stop();
+
+        /// <summary>
+        /// Sets the volume of this sound (0.0 to 1.0).
+        /// </summary>
+        /// <param name="volume">Volume level.</param>
+        void SetVolume(float volume);
+        bool IsPlaying();
     }
 
     /// <summary>
@@ -74,5 +81,12 @@ namespace TaikoQuant.Core
         /// Resumes the music from pause.
         /// </summary>
         void Resume();
+
+        /// <summary>
+        /// Sets the volume of this music (0.0 to 1.0).
+        /// </summary>
+        /// <param name="volume">Volume level.</param>
+        void SetVolume(float volume);
+        bool IsPlaying();
     }
 }

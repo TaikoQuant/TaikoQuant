@@ -35,7 +35,6 @@ namespace TaikoQuant.Core.Scenes
         private IFont? _fontLarge;
         private ISound? _sndDong;
         private ISound? _sndKa;
-        private bool _resourcesLoaded = false;
         private const string FontPath = "Theme/default/Fonts/NotoSansCJKjp-Regular.otf";
 
         // Generate a codepoint array covering basic ASCII and common Japanese ranges.
@@ -71,6 +70,16 @@ namespace TaikoQuant.Core.Scenes
 
             _currentDir = _songsRoot;
             RefreshItemList();
+        }
+
+        public void Init(IRenderer renderer, IAudioService audio)
+        {
+            try {
+                int[] jpCodepoints = GenerateJapaneseCodepoints();
+                _fontUi = renderer.LoadFont(FontPath, 20, jpCodepoints);
+                _fontNormal = renderer.LoadFont(FontPath, 24, jpCodepoints);
+                _fontLarge = renderer.LoadFont(FontPath, 32, jpCodepoints);
+            } catch { }
         }
 
         private void RefreshItemList()
@@ -112,17 +121,30 @@ namespace TaikoQuant.Core.Scenes
         {
             if (_titleCache.TryGetValue(filePath, out string? title))
                 return title!;
-            string titleValue;
+            
+            string titleValue = Path.GetFileNameWithoutExtension(filePath);
             try
             {
-                var parser = new TJAParser(filePath);
-                SongInfo info = parser.Parse(0);
-                titleValue = info.metadata.title.FirstOrDefault().Value ?? Path.GetFileNameWithoutExtension(filePath);
+                // Fast path: simply read lines until we find the title.
+                // Avoids loading/parsing the entire TJA file just for the song select screen.
+                using (var reader = new StreamReader(filePath, System.Text.Encoding.GetEncoding(932)))
+                {
+                    string? line;
+                    while ((line = reader.ReadLine()) != null)
+                    {
+                        if (line.StartsWith("TITLE:", StringComparison.OrdinalIgnoreCase))
+                        {
+                            titleValue = line.Substring(6).Trim();
+                            break;
+                        }
+                    }
+                }
             }
             catch (Exception)
             {
-                titleValue = Path.GetFileNameWithoutExtension(filePath);
+                // Fallback to filename on error
             }
+            
             _titleCache[filePath] = titleValue;
             return titleValue;
         }
@@ -191,17 +213,6 @@ namespace TaikoQuant.Core.Scenes
 
         public void Draw(IRenderer renderer)
         {
-            if (!_resourcesLoaded)
-            {
-                try {
-                    int[] jpCodepoints = GenerateJapaneseCodepoints();
-                    _fontUi = renderer.LoadFont(FontPath, 20, jpCodepoints);
-                    _fontNormal = renderer.LoadFont(FontPath, 24, jpCodepoints);
-                    _fontLarge = renderer.LoadFont(FontPath, 32, jpCodepoints);
-                } catch { }
-                _resourcesLoaded = true;
-            }
-
             renderer.Clear(0x000000FF);
 
             float screenCenterY = renderer.Height / 2f;

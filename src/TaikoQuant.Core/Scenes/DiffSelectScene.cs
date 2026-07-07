@@ -13,7 +13,6 @@ namespace TaikoQuant.Core.Scenes
 
         // Font for rendering text.
         private IFont? _font;
-        private bool _fontLoaded = false;
         private const string FontPath = "Theme/default/Fonts/NotoSansCJKjp-Regular.otf";
 
         // Generate a codepoint array covering ASCII and common Japanese ranges.
@@ -42,6 +41,12 @@ namespace TaikoQuant.Core.Scenes
             {
                 _song = song;
             }
+        }
+
+        public void Init(IRenderer renderer, IAudioService audio)
+        {
+            int[] jpCodepoints = GenerateJapaneseCodepoints();
+            _font = renderer.LoadFont(FontPath, 24, jpCodepoints);
         }
 
         public void Dispose()
@@ -75,14 +80,6 @@ namespace TaikoQuant.Core.Scenes
 
         public void Draw(IRenderer renderer)
         {
-            // Load font if not already loaded.
-            if (!_fontLoaded)
-            {
-                int[] jpCodepoints = GenerateJapaneseCodepoints();
-                    _font = renderer.LoadFont(FontPath, 24, jpCodepoints);
-                _fontLoaded = true;
-            }
-
             renderer.Clear(0x000000FF);
             string title = _song != null ? $"Select Difficulty: {_song.Title}" : "Select Difficulty";
             float titleWidth = renderer.MeasureText(title, _font, 24, 0);

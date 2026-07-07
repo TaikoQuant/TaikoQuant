@@ -4,5 +4,6 @@
     <Project Path="src/TaikoQuant.Core/TaikoQuant.Core.csproj" />
     <Project Path="src/TaikoQuant.Game/TaikoQuant.Game.csproj" />
     <Project Path="src/TaikoQuant.Rendering.Raylib/TaikoQuant.Rendering.Raylib.csproj" />
+    <Project Path="src/TaikoQuant.System/TaikoQuant.System.csproj" />
   </Folder>
 </Solution>

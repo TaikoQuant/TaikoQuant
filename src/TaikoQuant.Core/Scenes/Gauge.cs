@@ -55,7 +55,7 @@ namespace TaikoQuant.Core.Scenes
         public void Draw(IRenderer renderer)
         {
             // Background (border)
-            renderer.DrawRectangleLines(_x, _y, _width, _height, COLOR_BORDER);
+            // renderer.DrawRectangleLines(_x, _y, _width, _height, COLOR_BORDER);
 
             // Fill width proportional to percent
             int fillW = (int)(_width * (_percent / 100f));

@@ -1,327 +1,85 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.IO;
 using System.Linq;
-using System.Text.RegularExpressions;
+using TaikoNauts.Core.Taiko.Charts;
 
 namespace TaikoQuant.Core
 {
     /// <summary>
-    /// Parses a TJA (Taiko no Tatsujin) chart file into a SongInfo object.
-    /// This is a simplified but functional port of the original C++ TJAParser.
+    /// TJAChartCore の TjaChartReader をラップし、TaikoQuant で使いやすい形に整形するクラス。
+    /// 譜面の解析はすべて TjaChartReader に委譲します。
     /// </summary>
-    #pragma warning disable CS0414
-using System.Linq;
-using TaikoNauts.Core.Taiko.Charts;
-
-public class TJAParser
+    public class TJAParser
     {
-        // Existing fields and methods...
+        private readonly string _tjaPath;
+
+        public TJAParser(string tjaPath)
+        {
+            _tjaPath = tjaPath;
+        }
 
         /// <summary>
-        /// Loads a TJA file using the original TaikoNauts parser and extracts hittable notes.
-        /// Returns the raw Song object, the appropriate SongCourse, and a list of hittable Chip notes.
+        /// TJAファイルを解析し、指定難易度の Song・SongCourse・打撃対象 Chip リストを返す。
         /// </summary>
+        /// <param name="tjaPath">TJAファイルパス</param>
+        /// <param name="diffId">難易度 (0=Easy, 1=Normal, 2=Hard, 3=Oni, 4=Edit)</param>
         public (Song? song, SongCourse? course, List<Chip> hittableNotes) LoadSongData(string tjaPath, int diffId)
         {
             try
             {
-                var parser = new TjaChartReader();
-                var song = parser.GetSongDataFromTja(tjaPath, TjaChartReader.LoadType.Normal);
+                var reader = new TjaChartReader();
+                var song = reader.GetSongDataFromTja(tjaPath, TjaChartReader.LoadType.Normal);
+                if (song == null)
+                    return (null, null, new List<Chip>());
+
+                // 指定難易度のコースを取得。なければ最初に見つかったコースを使用
                 SongCourse? course = null;
-                if (song != null && diffId >= 0 && diffId < 5)
-                {
+                if (diffId >= 0 && diffId < song._songCourses.Length)
                     course = song._songCourses[diffId];
-                }
-                if (course == null && song != null)
-                {
+                if (course == null)
                     course = song._songCourses.FirstOrDefault(c => c != null);
-                }
-                var hittable = new List<Chip>();
+
+                var hittableNotes = new List<Chip>();
                 if (course != null)
                 {
-                    foreach (var chip in course._chips)
+                    // 分岐がある場合はノーマル分岐のチップを使用、なければ通常のチップリストを使用
+                    var chips = course._hasBranch ? course._chipsNormal : course._chips;
+                    foreach (var chip in chips)
                     {
                         if (IsHittable(chip))
-                        {
-                            hittable.Add(chip);
-                        }
+                            hittableNotes.Add(chip);
                     }
-                    hittable = hittable.OrderBy(c => c._time).ToList();
+                    hittableNotes = hittableNotes.OrderBy(c => c._time).ToList();
                 }
-                return (song, course, hittable);
+
+                return (song, course, hittableNotes);
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[TJAParser] TJA parse error: {ex}");
+                System.Diagnostics.Debug.WriteLine($"[TJAParser] Parse error: {ex}");
                 return (null, null, new List<Chip>());
             }
         }
 
-        private static bool IsHittable(Chip chip) => true;
-
-        private readonly string _filePath;
-        private readonly int _startDelayMs;
-        private string _directory;
-        private List<string> _lines = new List<string>();
-
-        // Parsed data
-        private TJAMetadata _metadata = new TJAMetadata();
-        private TJAEXData _exData = new TJAEXData();
-        private NoteList _masterNotes = new NoteList();
-        private List<NoteList> _branchM = new List<NoteList>();
-        private List<NoteList> _branchE = new List<NoteList>();
-        private List<NoteList> _branchN = new List<NoteList>();
-        private ScrollType _chartScrollType = ScrollType.NMSCROLL;
-
-        // Internal state during parsing
-        private float _currentMs = 0.0f;
-        private float _currentBpm = 120.0f;
-        private float _currentBpmChange = 0.0f;
-        private float _scrollXModifier = 1.0f;
-        private float _scrollYModifier = 0.0f;
-        private ScrollType _currentScrollType = ScrollType.NMSCROLL;
-        private bool _barlineDisplay = true;
-        private List<Note>? _currentNoteList = null;
-        private List<Note>? _currentDrawList = null;
-        private List<Note>? _currentBarList = null;
-        private List<TimelineObject>? _currentTimeline = null;
-        private int _noteIndex = 0;
-        private List<int> _balloons = new List<int>();
-        private int _balloonIndex = 0;
-        private Note? _prevNote = null;
-        private bool _barlineAdded = false;
-        private float _suddenAppear = 0.0f;
-        private float _suddenMoving = 0.0f;
-        private float _judgePosX = 0.0f;
-        private float _judgePosY = 0.0f;
-        private float _delayCurrent = 0.0f;
-        private float _delayLastNoteMs = 0.0f;
-        private bool _isBranching = false;
-        private bool _isSectionStart = false;
-        private float _startBranchMs = 0.0f;
-        private float _startBranchBpm = 120.0f;
-        private float _startBranchTimeSig = 4.0f / 4.0f;
-        private float _startBranchXScroll = 1.0f;
-        private float _startBranchYScroll = 0.0f;
-        private bool _startBranchBarline = false;
-        private int _branchBalloonIndex = 0;
-        private Note? _sectionBar = null;
-
-        public TJAParser(string path, int start_delay_ms = 0)
-        {
-            _filePath = path;
-            _startDelayMs = start_delay_ms;
-            _directory = Path.GetDirectoryName(path) ?? string.Empty;
-            LoadFileLines();
-            GetMetadata();
-        }
-
-        #region Public API
-
         /// <summary>
-        /// Parses the specified difficulty (0=Easy,1=Normal,2=Hard,3=Oni,4=Edit) and returns a SongInfo.
+        /// 打撃判定の対象となるノーツかどうかを判定する。
+        /// ロールエンド・小節線・None は除外する。
         /// </summary>
-        public SongInfo Parse(int difficulty)
+        public static bool IsHittable(Chip chip)
         {
-            ResetParseState();
-            var noteGroups = DataToNotes(difficulty);
-            NotesToPosition(noteGroups);
-            GetMoji(ref _currentNoteList);
-
-            // Build the result SongInfo
-            var songInfo = new SongInfo
+            return chip._noteType switch
             {
-                metadata = _metadata,
-                ex_data = _exData,
-                master_notes = _masterNotes,
-                branch_m = _branchM,
-                branch_e = _branchE,
-                branch_n = _branchN,
-                scroll_type = _chartScrollType
+                TaikoNauts.Core.Taiko.Charts.NoteType.Don => true,
+                TaikoNauts.Core.Taiko.Charts.NoteType.Ka => true,
+                TaikoNauts.Core.Taiko.Charts.NoteType.DON => true,
+                TaikoNauts.Core.Taiko.Charts.NoteType.KA => true,
+                TaikoNauts.Core.Taiko.Charts.NoteType.RollStart => true,
+                TaikoNauts.Core.Taiko.Charts.NoteType.RollBigStart => true,
+                TaikoNauts.Core.Taiko.Charts.NoteType.BalloonStart => true,
+                TaikoNauts.Core.Taiko.Charts.NoteType.Kusudama => true,
+                _ => false
             };
-            return songInfo;
         }
-
-        #endregion
-
-        #region File Loading
-
-        private void LoadFileLines()
-        {
-            _lines.Clear();
-            foreach (var line in File.ReadAllLines(_filePath, System.Text.Encoding.GetEncoding(932)))
-            {
-                var stripped = StripComments(line);
-                if (!string.IsNullOrWhiteSpace(stripped))
-                {
-                    _lines.Add(stripped.Trim());
-                }
-            }
-        }
-
-        private static string StripComments(string line)
-        {
-            // Remove everything after a '#' or '//'
-            var hashIdx = line.IndexOf('#');
-            var slashIdx = line.IndexOf("//");
-            int cut = -1;
-            if (hashIdx >= 0) cut = hashIdx;
-            if (slashIdx >= 0 && (cut < 0 || slashIdx < cut)) cut = slashIdx;
-            if (cut >= 0) line = line.Substring(0, cut);
-            return line.Trim();
-        }
-
-        #endregion
-
-        #region Metadata
-
-        private void GetMetadata()
-        {
-            // Reset to defaults
-            _metadata = new TJAMetadata();
-            _exData = new TJAEXData();
-
-            foreach (var line in _lines)
-            {
-                if (line.StartsWith("//")) continue; // comment line already stripped, but keep safe
-                if (line.Contains(":"))
-                {
-                    var parts = line.Split(new[] { ':' }, 2);
-                    var key = parts[0].Trim();
-                    var value = parts[1].Trim();
-
-                    switch (key.ToUpperInvariant())
-                    {
-                        case "TITLE":
-                            _metadata.title[""] = value;
-                            break;
-                        case "TITLE:EN":
-                            _metadata.title["en"] = value;
-                            break;
-                        case "SUBTITLE":
-                            _metadata.subtitle[""] = value;
-                            break;
-                        case "SUBTITLE:EN":
-                            _metadata.subtitle["en"] = value;
-                            break;
-                        case "GENRE":
-                            _metadata.genre = value;
-                            break;
-                        case "BPM":
-                            if (float.TryParse(value, NumberStyles.Any, CultureInfo.InvariantCulture, out var bpm))
-                                _metadata.bpm = bpm;
-                            break;
-                        case "WAVE":
-                            _metadata.wave = MakeRelativePath(value);
-                            break;
-                        case "OFFSET":
-                            if (float.TryParse(value, NumberStyles.Any, CultureInfo.InvariantCulture, out var offset))
-                                _metadata.offset = offset;
-                            break;
-                        case "DEMOSTART":
-                            if (float.TryParse(value, NumberStyles.Any, CultureInfo.InvariantCulture, out var demo))
-                                _metadata.demostart = demo;
-                            break;
-                        case "VOLUME":
-                            // Not stored in metadata; could be added if needed.
-                            break;
-                        case "DEMOOFFSET":
-                            // Not used
-                            break;
-                        case "SCREEN":
-                            // Not used
-                            break;
-                        case "BRANCHSTART":
-                            // Handled in parsing
-                            break;
-                        case "BRANCHEND":
-                            // Handled
-                            break;
-                        case "SCROLL":
-                            // Handled
-                            break;
-                        case "SOUND":
-                            // Not stored
-                            break;
-                        default:
-                            // Ignore unknown
-                            break;
-                    }
-                }
-            }
-
-            // Ensure we have at least a title
-            if (!_metadata.title.Any())
-                _metadata.title[""] = Path.GetFileNameWithoutExtension(_filePath);
-        }
-
-        private string MakeRelativePath(string path)
-        {
-            // If path is absolute, return as-is; else make relative to _directory.
-            if (Path.IsPathRooted(path))
-                return path;
-            return Path.GetFullPath(Path.Combine(_directory, path));
-        }
-
-        #endregion
-
-        #region Parsing Helpers
-
-        private void ResetParseState()
-        {
-            _currentMs = 0.0f + _startDelayMs;
-            _currentBpm = _metadata.bpm > 0 ? _metadata.bpm : 120.0f;
-            _currentBpmChange = 0.0f;
-            _scrollXModifier = 1.0f;
-            _scrollYModifier = 0.0f;
-            _currentScrollType = ScrollType.NMSCROLL;
-            _barlineDisplay = true;
-            _currentNoteList = null;
-            _currentDrawList = null;
-            _currentBarList = null;
-            _currentTimeline = null;
-            _noteIndex = 0;
-            _balloons.Clear();
-            _balloonIndex = 0;
-            _prevNote = null;
-            _barlineAdded = false;
-            _suddenAppear = 0.0f;
-            _suddenMoving = 0.0f;
-            _judgePosX = 0.0f;
-            _judgePosY = 0.0f;
-            _delayCurrent = 0.0f;
-            _delayLastNoteMs = 0.0f;
-            _isBranching = false;
-            _isSectionStart = false;
-            _startBranchMs = 0.0f;
-            _startBranchBpm = 120.0f;
-            _startBranchTimeSig = 4.0f / 4.0f;
-            _startBranchXScroll = 1.0f;
-            _startBranchYScroll = 0.0f;
-            _startBranchBarline = false;
-            _branchBalloonIndex = 0;
-            _sectionBar = null;
-        }
-
-        // Stub methods to satisfy compilation (real implementations should replace these)
-        private List<NoteList> DataToNotes(int difficulty)
-        {
-            // TODO: implement proper note conversion
-            return new List<NoteList>();
-        }
-
-        private void NotesToPosition(List<NoteList> notes)
-        {
-            // TODO: implement positioning logic
-        }
-
-        private void GetMoji(ref List<Note> noteList)
-        {
-            // TODO: implement lyric extraction
-        }
-
-        #endregion
     }
 }

@@ -21,27 +21,46 @@ namespace TaikoQuant.Core
     /// </summary>
     public static class SettingsHelper
     {
-        private static readonly string _configPath =
-            Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "TaikoQuant",
-                "config.json");
+        private static readonly string _configPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "config.ini");
 
         public static GameSettings Load()
         {
+            var settings = new GameSettings();
             try
             {
                 if (File.Exists(_configPath))
                 {
-                    var json = File.ReadAllText(_configPath);
-                    return JsonSerializer.Deserialize<GameSettings>(json) ?? new GameSettings();
+                    var lines = File.ReadAllLines(_configPath);
+                    foreach (var line in lines)
+                    {
+                        var span = line.Trim();
+                        if (string.IsNullOrEmpty(span) || span.StartsWith(";") || span.StartsWith("#")) continue;
+
+                        var split = span.Split('=', 2);
+                        if (split.Length == 2)
+                        {
+                            var key = split[0].Trim();
+                            var val = split[1].Trim();
+
+                            if (key.Equals("AutoPlay", StringComparison.OrdinalIgnoreCase))
+                                if (bool.TryParse(val, out bool b)) settings.AutoPlay = b;
+                            if (key.Equals("VSync", StringComparison.OrdinalIgnoreCase))
+                                if (bool.TryParse(val, out bool b)) settings.VSync = b;
+                            if (key.Equals("MasterVolume", StringComparison.OrdinalIgnoreCase))
+                                if (float.TryParse(val, out float f)) settings.MasterVolume = f;
+                            if (key.Equals("SfxVolume", StringComparison.OrdinalIgnoreCase))
+                                if (float.TryParse(val, out float f)) settings.SfxVolume = f;
+                            if (key.Equals("MusicVolume", StringComparison.OrdinalIgnoreCase))
+                                if (float.TryParse(val, out float f)) settings.MusicVolume = f;
+                        }
+                    }
                 }
             }
             catch (Exception)
             {
                 // If any error, return defaults.
             }
-            return new GameSettings();
+            return settings;
         }
 
         public static void Save(GameSettings settings)
@@ -51,8 +70,17 @@ namespace TaikoQuant.Core
                 var dir = Path.GetDirectoryName(_configPath);
                 if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
                     Directory.CreateDirectory(dir);
-                var json = JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true });
-                File.WriteAllText(_configPath, json);
+
+                var lines = new[]
+                {
+                    "[Settings]",
+                    $"AutoPlay={settings.AutoPlay}",
+                    $"VSync={settings.VSync}",
+                    $"MasterVolume={settings.MasterVolume}",
+                    $"SfxVolume={settings.SfxVolume}",
+                    $"MusicVolume={settings.MusicVolume}"
+                };
+                File.WriteAllLines(_configPath, lines);
             }
             catch (Exception)
             {
